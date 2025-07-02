@@ -27,7 +27,7 @@
 
 using namespace llvm;
 
-#define DEBUG_TYPE "packedintcombine"
+#define DEBUG_TYPE "packed-integer-combine"
 
 static cl::opt<unsigned> MaxCollectionIterations(
     "packedint-max-iterations",
