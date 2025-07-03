@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 ///
-/// This file provides the interface for LLVM's Packed Integer Combine pass.
+/// This file implements the interface for LLVM's Packed Integer Combine pass.
 /// This pass tries to treat integers as packed chunks of individual bytes,
 /// and leverage this to coalesce needlessly fragmented
 /// computations.
