@@ -452,11 +452,13 @@ public:
 };
 
 ByteVector ByteExpander::visitAdd(BinaryOperator &I) {
-  const ByteDefinition LhsDef =
-      getByteDefinitionIfIntermediateOperand(I.getOperand(0));
   const ByteDefinition RhsDef =
       getByteDefinitionIfIntermediateOperand(I.getOperand(1));
-  if (!LhsDef || !RhsDef)
+  if (!RhsDef)
+    return {};
+  const ByteDefinition LhsDef =
+      getByteDefinitionIfIntermediateOperand(I.getOperand(0));
+  if (!LhsDef)
     return {};
 
   const ByteLayout &Layout = LhsDef.getLayout();
@@ -484,11 +486,13 @@ ByteVector ByteExpander::visitAdd(BinaryOperator &I) {
 }
 
 ByteVector ByteExpander::visitAnd(BinaryOperator &I) {
-  const ByteDefinition LhsDef =
-      getByteDefinitionIfIntermediateOperand(I.getOperand(0));
   const ByteDefinition RhsDef =
       getByteDefinitionIfIntermediateOperand(I.getOperand(1));
-  if (!LhsDef || !RhsDef)
+  if (!RhsDef)
+    return {};
+  const ByteDefinition LhsDef =
+      getByteDefinitionIfIntermediateOperand(I.getOperand(0));
+  if (!LhsDef)
     return {};
 
   const ByteLayout &Layout = LhsDef.getLayout();
@@ -539,11 +543,13 @@ ByteVector ByteExpander::visitAnd(BinaryOperator &I) {
 }
 
 ByteVector ByteExpander::visitOr(BinaryOperator &I) {
-  const ByteDefinition LhsDef =
-      getByteDefinitionIfIntermediateOperand(I.getOperand(0));
   const ByteDefinition RhsDef =
       getByteDefinitionIfIntermediateOperand(I.getOperand(1));
-  if (!LhsDef || !RhsDef)
+  if (!RhsDef)
+    return {};
+  const ByteDefinition LhsDef =
+      getByteDefinitionIfIntermediateOperand(I.getOperand(0));
+  if (!LhsDef)
     return {};
 
   const ByteLayout &Layout = LhsDef.getLayout();
@@ -591,11 +597,13 @@ ByteVector ByteExpander::visitOr(BinaryOperator &I) {
 }
 
 ByteVector ByteExpander::visitXor(BinaryOperator &I) {
-  const ByteDefinition LhsDef =
-      getByteDefinitionIfIntermediateOperand(I.getOperand(0));
   const ByteDefinition RhsDef =
       getByteDefinitionIfIntermediateOperand(I.getOperand(1));
-  if (!LhsDef || !RhsDef)
+  if (!RhsDef)
+    return {};
+  const ByteDefinition LhsDef =
+      getByteDefinitionIfIntermediateOperand(I.getOperand(0));
+  if (!LhsDef)
     return {};
 
   const ByteLayout &Layout = LhsDef.getLayout();
@@ -622,16 +630,16 @@ ByteVector ByteExpander::visitXor(BinaryOperator &I) {
 }
 
 ByteVector ByteExpander::visitShl(BinaryOperator &I) {
+  const auto *Const = dyn_cast<Constant>(I.getOperand(1));
+  if (!Const)
+    return {};
+
   const ByteDefinition BaseDef =
       getByteDefinitionIfIntermediateOperand(I.getOperand(0));
   if (!BaseDef)
     return {};
 
   const unsigned NumBytes = BaseDef.getLayout().getNumBytes();
-
-  const auto *Const = dyn_cast<Constant>(I.getOperand(1));
-  if (!Const)
-    return {};
 
   if (isa<ConstantInt>(Const)) {
     const unsigned ShAmt = Const->getUniqueInteger().getLimitedValue();
@@ -676,16 +684,16 @@ ByteVector ByteExpander::visitShl(BinaryOperator &I) {
 }
 
 ByteVector ByteExpander::visitLShr(BinaryOperator &I) {
+  const auto *Const = dyn_cast<Constant>(I.getOperand(1));
+  if (!Const)
+    return {};
+
   const ByteDefinition BaseDef =
       getByteDefinitionIfIntermediateOperand(I.getOperand(0));
   if (!BaseDef)
     return {};
 
   const unsigned NumBytes = BaseDef.getLayout().getNumBytes();
-
-  const auto *Const = dyn_cast<Constant>(I.getOperand(1));
-  if (!Const)
-    return {};
 
   if (isa<ConstantInt>(Const)) {
     const unsigned ShAmt = Const->getUniqueInteger().getLimitedValue();
