@@ -24,6 +24,7 @@
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Transforms/Scalar.h"
+#include <variant>
 
 using namespace llvm;
 
@@ -247,67 +248,23 @@ using ByteVector = SmallVector<ByteUse, 8>;
 
 /// The decomposition of an IR value into its individual bytes, tracking where
 /// each byte is obtained.
-class ByteDefinition {
-  /// Enum classifying what Ptr points to.
-  enum ByteType : uint8_t {
-    /// Ptr's value is undefined.
-    INVALID,
-    /// The byte definition is given by a ByteVector, which is referenced (but
-    /// not captured) by Ptr.
-    VECTOR,
-    /// The bytes are obtained from a (currently opaque) IR value, held by Ptr.
-    VALUE,
-    /// The bytes are obtained from a constant integer, held by Ptr.
-    CONST_INT,
-    /// The bytes are obtained from a constant vector of integers, held by Ptr.
-    CONST_VEC,
-  };
-
-  ByteType DefType;
-  void *Ptr;
+struct ByteDefinition {
+  std::variant<std::nullopt_t, ByteVector *, Value *> Ptr;
   ByteLayout Layout;
-  ByteDefinition(ByteType DefType, void *Ptr, ByteLayout Layout)
-      : DefType(DefType), Ptr(Ptr), Layout(Layout) {}
 
 public:
   /// Indicate that a value cannot be decomposed into bytes in a known way.
-  static ByteDefinition invalid() { return {INVALID, nullptr, {0, 0}}; }
+  static ByteDefinition invalid() { return {std::nullopt, {0, 0}}; }
   /// Indicate that a value's bytes are known, and track their producers.
   static ByteDefinition vector(ByteVector &Ref, ByteLayout Layout) {
-    return {VECTOR, &Ref, Layout};
+    return {&Ref, Layout};
   }
   /// Indicate that a value's bytes are opaque.
   static ByteDefinition value(Value &V) {
-    return {VALUE, &V, *getByteLayout(V.getType())};
-  }
-  /// Indicate that the bytes come from a constant integer.
-  static ByteDefinition constInt(ConstantInt &Int) {
-    return {CONST_INT, &Int, *getByteLayout(Int.getType())};
-  }
-  /// Indicate that the bytes come from a constant vector of integers.
-  static ByteDefinition constVec(Constant &Vec) {
-    assert(Vec.getType()->isVectorTy());
-    return {CONST_VEC, &Vec, *getByteLayout(Vec.getType())};
+    return {&V, *getByteLayout(V.getType())};
   }
 
-  ByteVector &getVector() const {
-    assert(DefType == VECTOR);
-    return *static_cast<ByteVector *>(Ptr);
-  }
-  Value &getValue() const {
-    assert(DefType == VALUE);
-    return *static_cast<Value *>(Ptr);
-  }
-  ConstantInt &getConstInt() const {
-    assert(DefType == CONST_INT);
-    return *static_cast<ConstantInt *>(Ptr);
-  }
-  Constant &getConstVec() const {
-    assert(DefType == CONST_VEC);
-    return *static_cast<Constant *>(Ptr);
-  }
-
-  bool isValid() const { return DefType != INVALID; }
+  bool isValid() const { return !std::holds_alternative<std::nullopt_t>(Ptr); }
 
   /// Return true iff the byte definition is valid.
   operator bool() const { return isValid(); }
@@ -315,60 +272,63 @@ public:
   /// Get the definition of the byte at the specified byte offset, where 0 is
   /// the least significant byte.
   Byte getByte(unsigned Idx) const {
-    switch (DefType) {
-    default:
-      llvm_unreachable("Invalid byte definition");
-    case VECTOR:
-      return getVector()[Idx].getByte();
-    case VALUE:
-      return Byte(getValue(), Idx);
-    case CONST_INT:
-      return Byte(getConstInt().getValue().extractBitsAsZExtValue(
-          Byte::BitWidth, Idx * Byte::BitWidth));
-    case CONST_VEC: {
-      const auto &Vec = getConstVec();
-      const ByteLayout Layout = *getByteLayout(Vec.getType());
-      const unsigned VecIdx = Idx / Layout.NumBytesPerElement;
-      const unsigned EltIdx = Idx % Layout.NumBytesPerElement;
+    struct Visitor {
+      unsigned Idx;
 
-      Constant *Elt = Vec.getAggregateElement(VecIdx);
-      if (const auto *Int = dyn_cast<ConstantInt>(Elt))
-        return Byte(Int->getValue().extractBitsAsZExtValue(
-            Byte::BitWidth, EltIdx * Byte::BitWidth));
+      Byte operator()(std::nullopt_t) {
+        llvm_unreachable("Invalid byte definition");
+      }
+      Byte operator()(ByteVector *BV) { return (*BV)[Idx].getByte(); }
+      Byte operator()(Value *V) {
+        if (auto *Int = dyn_cast<ConstantInt>(V))
+          return Byte(Int->getValue().extractBitsAsZExtValue(
+              Byte::BitWidth, Idx * Byte::BitWidth));
 
-      return Byte(*Elt, EltIdx);
-    }
-    }
+        if (V->getType()->isVectorTy()) {
+          if (auto *Vec = dyn_cast<Constant>(V)) {
+            const ByteLayout Layout = *getByteLayout(Vec->getType());
+            const unsigned VecIdx = Idx / Layout.NumBytesPerElement;
+            const unsigned EltIdx = Idx % Layout.NumBytesPerElement;
+
+            if (Constant *Elt = Vec->getAggregateElement(VecIdx)) {
+              if (const auto *Int = dyn_cast<ConstantInt>(Elt))
+                return Byte(Int->getValue().extractBitsAsZExtValue(
+                    Byte::BitWidth, EltIdx * Byte::BitWidth));
+
+              return Byte(*Elt, EltIdx);
+            }
+          }
+        }
+
+        return Byte(*V, Idx);
+      }
+    };
+
+    return std::visit(Visitor{Idx}, Ptr);
   }
 
   const ByteLayout &getLayout() const { return Layout; }
 
   void print(raw_ostream &ROS, bool NewLine = true) const {
-    switch (DefType) {
-    default:
-      ROS << "[INVALID]";
-      break;
-    case VECTOR: {
-      ByteVector &BV = getVector();
-      ROS << "{ ";
-      for (unsigned ByteIdx = 0; ByteIdx < BV.size(); ++ByteIdx)
-        ROS << ByteIdx << ": " << BV[ByteIdx].getByte() << "; ";
-      ROS << '}';
-      break;
-    }
-    case VALUE:
-      ROS << '(';
-      getValue().printAsOperand(ROS);
-      ROS << ")[0:" << Layout.getNumBytes() << ']';
-      break;
-    case CONST_INT:
-      ROS << getConstInt();
-      break;
-    case CONST_VEC:
-      ROS << getConstVec();
-      break;
-    }
+    struct Visitor {
+      raw_ostream &ROS;
+      const ByteLayout &Layout;
 
+      void operator()(std::nullopt_t) { ROS << "[INVALID]"; }
+      void operator()(ByteVector *BV) {
+        ROS << "{ ";
+        for (unsigned ByteIdx = 0; ByteIdx < BV->size(); ++ByteIdx)
+          ROS << ByteIdx << ": " << (*BV)[ByteIdx].getByte() << "; ";
+        ROS << '}';
+      }
+      void operator()(Value *V) {
+        ROS << '(';
+        V->printAsOperand(ROS);
+        ROS << ")[0:" << Layout.getNumBytes() << ']';
+      }
+    };
+
+    std::visit(Visitor{ROS, Layout}, Ptr);
     if (NewLine)
       ROS << '\n';
   }
@@ -930,12 +890,6 @@ ByteDefinition ByteExpander::getByteDefinition(Value *V, bool ExpandDef) {
   const std::optional<ByteLayout> Layout = getByteLayout(V->getType());
   if (!Layout)
     return ByteDefinition::invalid();
-
-  if (auto *ConstInt = dyn_cast<ConstantInt>(V))
-    return ByteDefinition::constInt(*ConstInt);
-  if (auto *Const = dyn_cast<Constant>(V))
-    if (Const->getType()->isVectorTy())
-      return ByteDefinition::constVec(*Const);
 
   if (ExpandDef)
     if (ByteVector *BV = expandByteDefinition(V))
@@ -1597,10 +1551,12 @@ public:
   /// Try to generate instructions for coalescing the given bytes and aligning
   /// them to the target value. Returns true iff this is successful.
   bool pushCoalescedBytes(CoalescedBytes CB) {
-    if (isa<Constant>(CB.Base) && CB.SignedShrByteOffset == 0) {
-      WorkList.emplace_back(CB.Base, CB.Mask);
-      return true;
-    }
+    if (CB.SignedShrByteOffset == 0)
+      if (auto *Const = dyn_cast<Constant>(CB.Base)) {
+        WorkList.emplace_back(
+            ConstantExpr::getBitCast(Const, TargetInst->getType()), CB.Mask);
+        return true;
+      }
 
     LLVM_DEBUG({
       dbgs() << "PICP [";
