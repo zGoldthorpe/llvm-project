@@ -30,17 +30,6 @@ using namespace llvm;
 
 #define DEBUG_TYPE "packed-integer-combine"
 
-static cl::opt<unsigned> MaxCollectionIterations(
-    "packedint-max-iterations",
-    cl::desc("Maximum number of iterations to isolate final packed "
-             "instructions. Set to 0 to iterate until convergence."),
-    cl::init(2), cl::Hidden);
-
-static cl::opt<bool>
-    AggressiveRewriting("packedint-aggressive-rewriter",
-                        cl::desc("Aggressively rewrite packed instructions."),
-                        cl::init(false), cl::Hidden);
-
 namespace {
 
 /// Reference to either a constant byte, or a byte extracted from an IR value.
@@ -407,7 +396,8 @@ public:
 
   /// Iterate over all instructions in a function over several passes to
   /// identify all final values and their byte definitions.
-  std::vector<Instruction *> collectPIICandidates(Function &F);
+  std::vector<Instruction *>
+  collectPIICandidates(Function &F, unsigned MaxCollectionIterations);
 };
 
 ByteVector ByteExpander::visitAnd(BinaryOperator &I) {
@@ -917,7 +907,9 @@ bool ByteExpander::checkIfIntermediate(Value *V, bool IsOperand) {
   return Definitions.contains(*FU.begin());
 }
 
-std::vector<Instruction *> ByteExpander::collectPIICandidates(Function &F) {
+std::vector<Instruction *>
+ByteExpander::collectPIICandidates(Function &F,
+                                   unsigned MaxCollectionIterations) {
   std::vector<Instruction *> PackedIntInsts;
 
   unsigned NumIterations = 1;
@@ -1656,7 +1648,8 @@ struct PackedIntInstruction {
 /// If the rewriter is non-aggressive, return nullopt if the rewriting is
 /// determined to be unnecessary.
 static std::optional<SmallVector<CoalescedBytes, 8>>
-getCoalescingOpportunity(Type *Ty, const ByteVector &BV) {
+getCoalescingOpportunity(Type *Ty, const ByteVector &BV,
+                         bool AggressiveRewriting) {
   const ByteLayout Layout = *getByteLayout(Ty);
   assert(Layout.getNumBytes() == BV.size() &&
          "Byte definition has unexpected width.");
@@ -1752,7 +1745,8 @@ getCoalescingOpportunity(Type *Ty, const ByteVector &BV) {
 /// Queue into \p PIIV the set of final values (or operands thereof, if the
 /// rewriter is non-aggressive) which are deemed beneficial to rewrite.
 static void queueRewriting(std::vector<PackedIntInstruction> &PIIV,
-                           Instruction &FinalInst, ByteExpander &BE) {
+                           Instruction &FinalInst, ByteExpander &BE,
+                           bool AggressiveRewriting) {
   SmallVector<Instruction *, 8> WorkList{&FinalInst};
   SmallPtrSet<Instruction *, 8> Seen{&FinalInst};
 
@@ -1773,7 +1767,7 @@ static void queueRewriting(std::vector<PackedIntInstruction> &PIIV,
       if (!AggressiveRewriting && I->getNumOperands() == 1)
         return std::nullopt;
 
-      return getCoalescingOpportunity(I->getType(), *BV);
+      return getCoalescingOpportunity(I->getType(), *BV, AggressiveRewriting);
     }();
 
     if (!CBV) {
@@ -1789,15 +1783,16 @@ static void queueRewriting(std::vector<PackedIntInstruction> &PIIV,
   } while (!WorkList.empty());
 }
 
-static bool runImpl(Function &F) {
+static bool runImpl(Function &F, PackedIntegerCombineOptions Options) {
   ByteExpander BE;
 
-  std::vector<Instruction *> PIICandidates = BE.collectPIICandidates(F);
+  std::vector<Instruction *> PIICandidates =
+      BE.collectPIICandidates(F, Options.MaxCollectionIterations);
   std::vector<PackedIntInstruction> PIIV;
 
   for (Instruction *I : PIICandidates) {
     if (!BE.checkIfIntermediate(I))
-      queueRewriting(PIIV, *I, BE);
+      queueRewriting(PIIV, *I, BE, Options.AggressiveRewriting);
     else
       LLVM_DEBUG(dbgs() << "PICP intermediate inst: " << *I << '\n'
                         << "            final user: "
@@ -1828,12 +1823,15 @@ static bool runImpl(Function &F) {
 }
 
 class PackedIntegerCombineLegacyPass : public FunctionPass {
+  PackedIntegerCombineOptions Options;
+
 public:
   static char ID;
 
-  PackedIntegerCombineLegacyPass() : FunctionPass(ID) {}
+  PackedIntegerCombineLegacyPass(PackedIntegerCombineOptions Options)
+      : FunctionPass(ID), Options(Options) {}
 
-  bool runOnFunction(Function &F) override { return runImpl(F); }
+  bool runOnFunction(Function &F) override { return runImpl(F, Options); }
 };
 char PackedIntegerCombineLegacyPass::ID = 0;
 
@@ -1841,7 +1839,7 @@ char PackedIntegerCombineLegacyPass::ID = 0;
 
 PreservedAnalyses PackedIntegerCombinePass::run(Function &F,
                                                 FunctionAnalysisManager &AM) {
-  if (!runImpl(F))
+  if (!runImpl(F, Options))
     return PreservedAnalyses::all();
 
   PreservedAnalyses PA;
@@ -1849,9 +1847,22 @@ PreservedAnalyses PackedIntegerCombinePass::run(Function &F,
   return PA;
 }
 
+void PackedIntegerCombinePass::printPipeline(
+    raw_ostream &OS, function_ref<StringRef(StringRef)> MapClassName2PassName) {
+  static_cast<PassInfoMixin<PackedIntegerCombinePass> *>(this)->printPipeline(
+      OS, MapClassName2PassName);
+  OS << '<';
+  if (Options.AggressiveRewriting)
+    OS << "aggressive;";
+  OS << "max-iterations=" << Options.MaxCollectionIterations << '>';
+}
+
 INITIALIZE_PASS(PackedIntegerCombineLegacyPass, DEBUG_TYPE,
                 "Packed Integer Combine", false, false)
 
-FunctionPass *llvm::createPackedIntegerCombinePass() {
-  return new PackedIntegerCombineLegacyPass();
+FunctionPass *
+llvm::createPackedIntegerCombinePass(unsigned MaxCollectionIterations,
+                                     bool AggressiveRewriting) {
+  return new PackedIntegerCombineLegacyPass(
+      {MaxCollectionIterations, AggressiveRewriting});
 }
