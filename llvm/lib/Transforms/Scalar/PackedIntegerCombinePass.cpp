@@ -167,7 +167,7 @@ struct CoalescedBytes {
   ///
   /// For instance, if bytes 3, 4, 5 of some value %val are coalesced to provide
   /// bytes 0, 1, 2 of the target %tgt, then ShrByteOffset = 3.
-  signed SignedShrByteOffset;
+  int SignedShrByteOffset;
   /// The bitmask identifying which bytes of the target value are covered by
   /// these coalesced bytes.
   ///
@@ -176,12 +176,12 @@ struct CoalescedBytes {
   /// be set, corresponding to the first three bits of %tgt.
   SmallBitVector Mask;
 
-  explicit CoalescedBytes(Value &Base, signed Offset, SmallBitVector Mask)
+  explicit CoalescedBytes(Value &Base, int Offset, SmallBitVector Mask)
       : Base(&Base), SignedShrByteOffset(Offset), Mask(Mask) {}
-  explicit CoalescedBytes(Value &Base, signed Offset, unsigned NumBytes)
+  explicit CoalescedBytes(Value &Base, int Offset, unsigned NumBytes)
       : Base(&Base), SignedShrByteOffset(Offset), Mask(NumBytes) {}
 
-  bool alignsWith(Value *V, signed VOffset) const {
+  bool alignsWith(Value *V, int VOffset) const {
     return Base == V && SignedShrByteOffset == VOffset;
   }
 
@@ -1761,8 +1761,8 @@ getCoalescingOpportunity(Type *Ty, const ByteVector &BV) {
     } else {
       CoalescedBytes *CB = nullptr;
       Value *Base = B.getBase();
-      const signed Offset =
-          static_cast<signed>(B.getIndex()) - static_cast<signed>(ByteIdx);
+      const int Offset =
+          static_cast<int>(B.getIndex()) - static_cast<int>(ByteIdx);
       for (unsigned CBIdx = 0; CBIdx < CBV.size(); ++CBIdx) {
         if (CBV[CBIdx].alignsWith(Base, Offset)) {
           CB = &CBV[CBIdx];
