@@ -128,7 +128,7 @@ struct ByteLayout {
 };
 
 /// Interpret the given type as a number of packed bytes, if possible.
-static std::optional<ByteLayout> tryGetByteLayout(const Type *Ty) {
+static std::optional<ByteLayout> getByteLayout(const Type *Ty) {
   unsigned IntBitWidth, NumElts;
   if (const auto *IntTy = dyn_cast<IntegerType>(Ty)) {
     IntBitWidth = IntTy->getBitWidth();
@@ -146,13 +146,6 @@ static std::optional<ByteLayout> tryGetByteLayout(const Type *Ty) {
     return std::nullopt;
 
   return ByteLayout{IntBitWidth / Byte::BitWidth, NumElts};
-}
-
-/// Interpret the given type as a number of backed bytes (aborts if impossible).
-static ByteLayout getByteLayout(const Type *Ty) {
-  const std::optional<ByteLayout> Layout = tryGetByteLayout(Ty);
-  assert(Layout);
-  return *Layout;
 }
 
 /// A convenience class for combining Byte instances obtained from the same base
@@ -285,16 +278,16 @@ public:
   }
   /// Indicate that a value's bytes are opaque.
   static ByteDefinition value(Value &V) {
-    return {VALUE, &V, getByteLayout(V.getType())};
+    return {VALUE, &V, *getByteLayout(V.getType())};
   }
   /// Indicate that the bytes come from a constant integer.
   static ByteDefinition constInt(ConstantInt &Int) {
-    return {CONST_INT, &Int, getByteLayout(Int.getType())};
+    return {CONST_INT, &Int, *getByteLayout(Int.getType())};
   }
   /// Indicate that the bytes come from a constant vector of integers.
   static ByteDefinition constVec(Constant &Vec) {
     assert(Vec.getType()->isVectorTy());
-    return {CONST_VEC, &Vec, getByteLayout(Vec.getType())};
+    return {CONST_VEC, &Vec, *getByteLayout(Vec.getType())};
   }
 
   ByteVector &getVector() const {
@@ -334,7 +327,7 @@ public:
           Byte::BitWidth, Idx * Byte::BitWidth));
     case CONST_VEC: {
       const auto &Vec = getConstVec();
-      const ByteLayout Layout = getByteLayout(Vec.getType());
+      const ByteLayout Layout = *getByteLayout(Vec.getType());
       const unsigned VecIdx = Idx / Layout.NumBytesPerElement;
       const unsigned EltIdx = Idx % Layout.NumBytesPerElement;
 
@@ -739,12 +732,12 @@ ByteVector ByteExpander::visitLShr(BinaryOperator &I) {
 }
 
 ByteVector ByteExpander::visitTruncInst(TruncInst &I) {
-  const std::optional<ByteLayout> Layout = tryGetByteLayout(I.getType());
+  const std::optional<ByteLayout> Layout = getByteLayout(I.getType());
   if (!Layout)
     return {};
 
   const std::optional<ByteLayout> SrcLayout =
-      tryGetByteLayout(I.getOperand(0)->getType());
+      getByteLayout(I.getOperand(0)->getType());
   if (!SrcLayout)
     return {};
 
@@ -768,7 +761,7 @@ ByteVector ByteExpander::visitTruncInst(TruncInst &I) {
 }
 
 ByteVector ByteExpander::visitZExtInst(ZExtInst &I) {
-  const std::optional<ByteLayout> Layout = tryGetByteLayout(I.getType());
+  const std::optional<ByteLayout> Layout = getByteLayout(I.getType());
   if (!Layout)
     return {};
 
@@ -798,7 +791,7 @@ ByteVector ByteExpander::visitZExtInst(ZExtInst &I) {
 }
 
 ByteVector ByteExpander::visitBitCastInst(BitCastInst &I) {
-  const std::optional<ByteLayout> Layout = tryGetByteLayout(I.getType());
+  const std::optional<ByteLayout> Layout = getByteLayout(I.getType());
   if (!Layout)
     return {};
 
@@ -875,7 +868,7 @@ ByteVector ByteExpander::visitInsertElementInst(InsertElementInst &I) {
 }
 
 ByteVector ByteExpander::visitShuffleVectorInst(ShuffleVectorInst &I) {
-  const std::optional<ByteLayout> Layout = tryGetByteLayout(I.getType());
+  const std::optional<ByteLayout> Layout = getByteLayout(I.getType());
   if (!Layout)
     return {};
 
@@ -961,7 +954,7 @@ ByteVector *ByteExpander::expandByteDefinition(Value *V) {
 }
 
 ByteDefinition ByteExpander::getByteDefinition(Value *V, bool ExpandDef) {
-  const std::optional<ByteLayout> Layout = tryGetByteLayout(V->getType());
+  const std::optional<ByteLayout> Layout = getByteLayout(V->getType());
   if (!Layout)
     return ByteDefinition::invalid();
 
@@ -1346,7 +1339,7 @@ class BytePackFolder {
 
     const unsigned NumTargetBytes = Layout.getNumBytes();
     Value *V = CB.Base;
-    const unsigned NumSrcBytes = getByteLayout(V->getType()).getNumBytes();
+    const unsigned NumSrcBytes = getByteLayout(V->getType())->getNumBytes();
     const StringRef &Name = V->getName();
 
     // Transformation: shr -> trunc -> mask -> zext -> shl
@@ -1418,7 +1411,7 @@ class BytePackFolder {
     const unsigned NumTargetBytes = Layout.getNumBytes();
     Value *V = CB.Base;
     const StringRef &Name = V->getName();
-    ByteLayout VecLayout = getByteLayout(V->getType());
+    ByteLayout VecLayout = *getByteLayout(V->getType());
 
     // For sub-element accesses, try to subdivide the vector into smaller
     // elements.
@@ -1431,7 +1424,7 @@ class BytePackFolder {
       auto *NewTy = FixedVectorType::get(TargetIntTy, VecLayout.NumVecElements *
                                                           SplitFactor);
       V = pushCast(Instruction::BitCast, V, NewTy);
-      VecLayout = getByteLayout(V->getType());
+      VecLayout = *getByteLayout(V->getType());
     }
 
     // Give up if bytes are obtained from a strange offset.
@@ -1526,7 +1519,7 @@ class BytePackFolder {
     auto *TargetVecTy = cast<FixedVectorType>(TargetInst->getType());
     Type *TargetEltTy = TargetVecTy->getElementType();
 
-    const ByteLayout SrcLayout = getByteLayout(CB.Base->getType());
+    const ByteLayout SrcLayout = *getByteLayout(CB.Base->getType());
     Value *V = CB.Base;
     const StringRef &Name = V->getName();
 
@@ -1602,7 +1595,7 @@ class BytePackFolder {
 
 public:
   BytePackFolder(Instruction *TargetV)
-      : TargetInst(TargetV), Layout(getByteLayout(TargetV->getType())),
+      : TargetInst(TargetV), Layout(*getByteLayout(TargetV->getType())),
         VectorAlignedPack(PartialBytePack::invalid()) {}
 
   ~BytePackFolder() {
@@ -1736,7 +1729,7 @@ struct PackedIntInstruction {
 /// determined to be unnecessary.
 static std::optional<SmallVector<CoalescedBytes, 8>>
 getCoalescingOpportunity(Type *Ty, const ByteVector &BV) {
-  const ByteLayout Layout = getByteLayout(Ty);
+  const ByteLayout Layout = *getByteLayout(Ty);
   assert(Layout.getNumBytes() == BV.size() &&
          "Byte definition has unexpected width.");
 
