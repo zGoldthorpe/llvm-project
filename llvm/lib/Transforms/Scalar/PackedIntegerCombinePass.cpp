@@ -979,7 +979,7 @@ bool ByteExpander::checkIfIntermediate(Value *V, bool IsOperand) {
   if (isa<Constant>(V))
     return true;
 
-  /// Short-circuit check.
+  // Short-circuit check.
   if (IsOperand && V->hasOneUse())
     return true;
 
@@ -992,7 +992,6 @@ bool ByteExpander::checkIfIntermediate(Value *V, bool IsOperand) {
 
 std::vector<Instruction *> ByteExpander::collectPIICandidates(Function &F) {
   std::vector<Instruction *> PackedIntInsts;
-  LLVM_DEBUG(dbgs() << "PICP: Entering function " << F.getName() << '\n');
 
   unsigned NumIterations = 1;
   for (;;) {
