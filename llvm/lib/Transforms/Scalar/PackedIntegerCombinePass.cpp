@@ -408,7 +408,6 @@ public:
   // Visitation implementations return `true` iff a new byte definition was
   // successfully constructed.
 
-  ByteVector visitAdd(BinaryOperator &I);
   ByteVector visitAnd(BinaryOperator &I);
   ByteVector visitOr(BinaryOperator &I);
   ByteVector visitXor(BinaryOperator &I);
@@ -450,40 +449,6 @@ public:
   /// identify all final values and their byte definitions.
   std::vector<Instruction *> collectPIICandidates(Function &F);
 };
-
-ByteVector ByteExpander::visitAdd(BinaryOperator &I) {
-  const ByteDefinition RhsDef =
-      getByteDefinitionIfIntermediateOperand(I.getOperand(1));
-  if (!RhsDef)
-    return {};
-  const ByteDefinition LhsDef =
-      getByteDefinitionIfIntermediateOperand(I.getOperand(0));
-  if (!LhsDef)
-    return {};
-
-  const ByteLayout &Layout = LhsDef.getLayout();
-  const unsigned NumBytes = Layout.getNumBytes();
-
-  ByteVector BV;
-  BV.reserve(NumBytes);
-
-  for (unsigned ByteIdx = 0; ByteIdx < NumBytes; ++ByteIdx) {
-    const Byte Lhs = LhsDef.getByte(ByteIdx);
-    const Byte Rhs = RhsDef.getByte(ByteIdx);
-
-    const bool LhsIsZero = Lhs.isConstant() && Lhs.getConstant() == 0;
-    const bool RhsIsZero = Rhs.isConstant() && Rhs.getConstant() == 0;
-    if (LhsIsZero)
-      BV.emplace_back(Rhs, RhsIsZero ? ByteUse::AllOperands : 1);
-    else if (RhsIsZero)
-      BV.emplace_back(Lhs, 0);
-    else
-      return {};
-  }
-
-  assert(BV.size() == NumBytes);
-  return BV;
-}
 
 ByteVector ByteExpander::visitAnd(BinaryOperator &I) {
   const ByteDefinition RhsDef =
