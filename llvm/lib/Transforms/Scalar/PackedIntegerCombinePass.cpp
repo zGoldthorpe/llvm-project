@@ -101,10 +101,10 @@ public:
     else
       Base->printAsOperand(ROS, false);
 
-    ROS << "[" << Integer << "]";
+    ROS << '[' << Integer << ']';
 
     if (NewLine)
-      ROS << "\n";
+      ROS << '\n';
   }
 
   LLVM_DUMP_METHOD void dump() const { print(errs(), true); }
@@ -206,16 +206,16 @@ struct CoalescedBytes {
     for (unsigned Idx = 0; Idx < Mask.size(); ++Idx) {
       if (Mask.test(Idx)) {
         Base->printAsOperand(ROS, false);
-        ROS << "[" << (static_cast<int>(Idx) + SignedShrByteOffset) << "]";
+        ROS << '[' << (static_cast<int>(Idx) + SignedShrByteOffset) << ']';
       } else
         ROS << 0;
 
       ROS << "; ";
     }
-    ROS << "}";
+    ROS << '}';
 
     if (NewLine)
-      ROS << "\n";
+      ROS << '\n';
   }
 
   LLVM_DUMP_METHOD void dump() const { print(errs(), true); }
@@ -360,13 +360,13 @@ public:
       ROS << "{ ";
       for (unsigned ByteIdx = 0; ByteIdx < BV.size(); ++ByteIdx)
         ROS << ByteIdx << ": " << BV[ByteIdx].getByte() << "; ";
-      ROS << "}";
+      ROS << '}';
       break;
     }
     case VALUE:
-      ROS << "(";
+      ROS << '(';
       getValue().printAsOperand(ROS);
-      ROS << ")[0:" << Layout.getNumBytes() << "]";
+      ROS << ")[0:" << Layout.getNumBytes() << ']';
       break;
     case CONST_INT:
       ROS << getConstInt();
@@ -377,7 +377,7 @@ public:
     }
 
     if (NewLine)
-      ROS << "\n";
+      ROS << '\n';
   }
 
   LLVM_DUMP_METHOD void dump() const { print(errs(), true); }
@@ -999,11 +999,11 @@ bool ByteExpander::checkIfIntermediate(Value *V, bool IsOperand) {
 
 std::vector<Instruction *> ByteExpander::collectPIICandidates(Function &F) {
   std::vector<Instruction *> PackedIntInsts;
-  LLVM_DEBUG(dbgs() << "PICP: Entering function " << F.getName() << "\n");
+  LLVM_DEBUG(dbgs() << "PICP: Entering function " << F.getName() << '\n');
 
   unsigned NumIterations = 1;
   for (;;) {
-    LLVM_DEBUG(dbgs() << "PICP: Iteration " << NumIterations << "\n");
+    LLVM_DEBUG(dbgs() << "PICP: Iteration " << NumIterations << '\n');
     bool Converged = true;
 
     std::vector<Instruction *> CollectedInsts;
@@ -1034,7 +1034,7 @@ std::vector<Instruction *> ByteExpander::collectPIICandidates(Function &F) {
         LLVM_DEBUG({
           dbgs() << "PICP: Updating definition: ";
           I.printAsOperand(dbgs());
-          dbgs() << " = " << getByteDefinition(&I) << "\n";
+          dbgs() << " = " << getByteDefinition(&I) << '\n';
         });
       }
     }
@@ -1056,7 +1056,7 @@ std::vector<Instruction *> ByteExpander::collectPIICandidates(Function &F) {
     ++NumIterations;
   }
 
-  LLVM_DEBUG(dbgs() << "PICP: Total iterations: " << NumIterations << "\n");
+  LLVM_DEBUG(dbgs() << "PICP: Total iterations: " << NumIterations << '\n');
   return PackedIntInsts;
 }
 
@@ -1203,7 +1203,7 @@ class BytePackFolder {
     LLVM_DEBUG({
       dbgs() << "PICP [";
       TargetInst->printAsOperand(dbgs());
-      dbgs() << "]: Queuing cast " << *CI << "\n";
+      dbgs() << "]: Queuing cast " << *CI << '\n';
     });
     return CI;
   }
@@ -1216,7 +1216,7 @@ class BytePackFolder {
     LLVM_DEBUG({
       dbgs() << "PICP [";
       TargetInst->printAsOperand(dbgs());
-      dbgs() << "]: Queuing inst " << *I << "\n";
+      dbgs() << "]: Queuing inst " << *I << '\n';
     });
     return I;
   }
@@ -1612,7 +1612,7 @@ public:
       LLVM_DEBUG({
         dbgs() << "PICP [";
         TargetInst->printAsOperand(dbgs());
-        dbgs() << "]: Dequeuing cast " << *I << "\n";
+        dbgs() << "]: Dequeuing cast " << *I << '\n';
       });
       I->replaceAllUsesWith(PoisonValue::get(I->getType()));
       I->deleteValue();
@@ -1622,7 +1622,7 @@ public:
       LLVM_DEBUG({
         dbgs() << "PICP [";
         TargetInst->printAsOperand(dbgs());
-        dbgs() << "]: Dequeuing inst " << *Insts.back() << "\n";
+        dbgs() << "]: Dequeuing inst " << *Insts.back() << '\n';
       });
       Insts.back()->deleteValue();
       Insts.pop_back();
@@ -1640,7 +1640,7 @@ public:
     LLVM_DEBUG({
       dbgs() << "PICP [";
       TargetInst->printAsOperand(dbgs());
-      dbgs() << "]: Preparing bytes " << CB << "\n";
+      dbgs() << "]: Preparing bytes " << CB << '\n';
     });
     if (isa<FixedVectorType>(TargetInst->getType())) {
       if (isa<FixedVectorType>(CB.Base->getType()))
@@ -1773,7 +1773,7 @@ getCoalescingOpportunity(Type *Ty, const ByteVector &BV) {
             LLVM_DEBUG(dbgs()
                        << "PICP: Bytes " << *CB << " from operand " << OpIdx
                        << " can be coalesced with byte " << B
-                       << " from operand " << BU.getOperandIndex() << "\n");
+                       << " from operand " << BU.getOperandIndex() << '\n');
             OperandsAlreadyCoalesced = false;
           }
         }
@@ -1844,9 +1844,9 @@ static void queueRewriting(std::vector<PackedIntInstruction> &PIIV,
       // This instruction is beyond the analysis scope of PICP.
       continue;
 
-    LLVM_DEBUG(dbgs() << "PICP rewrite candidate: " << *I << "\n"
+    LLVM_DEBUG(dbgs() << "PICP rewrite candidate: " << *I << '\n'
                       << "             byte pack: " << BE.getByteDefinition(I)
-                      << "\n");
+                      << '\n');
     auto CBV = [&]() -> std::optional<SmallVector<CoalescedBytes, 8>> {
       // Short-circuit check for casts.
       if (!AggressiveRewriting && I->getNumOperands() == 1)
@@ -1878,9 +1878,9 @@ static bool runImpl(Function &F) {
     if (!BE.checkIfIntermediate(I))
       queueRewriting(PIIV, *I, BE);
     else
-      LLVM_DEBUG(dbgs() << "PICP intermediate inst: " << *I << "\n"
+      LLVM_DEBUG(dbgs() << "PICP intermediate inst: " << *I << '\n'
                         << "            final user: "
-                        << **BE.getFinalUsers(I).begin() << "\n");
+                        << **BE.getFinalUsers(I).begin() << '\n');
   }
 
   DenseMap<Instruction *, Value *> InstSubs;
@@ -1888,7 +1888,7 @@ static bool runImpl(Function &F) {
   for (const PackedIntInstruction &PII : PIIV)
     if (Value *V = PII.rewrite(IRB)) {
       LLVM_DEBUG(dbgs() << "PICP rewrite successful for " << *PII.TargetInst
-                        << "\n");
+                        << '\n');
       InstSubs[PII.TargetInst] = V;
     }
 
