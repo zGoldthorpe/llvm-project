@@ -6104,19 +6104,9 @@ KnownFPClass SelectionDAG::computeKnownFPClass(SDValue Op,
     break;
   }
   case ISD::BITCAST: {
-    // FIXME: It should not be necessary to check for an elementwise bitcast.
-    // If a bitcast is not elementwise between vector / scalar types,
-    // computeKnownBits already splices the known bits of the source elements
-    // appropriately so as to line up with the bits of the result's demanded
-    // elements.
-    EVT SrcVT = Op.getOperand(0).getValueType();
-    if (VT.isScalableVector() || SrcVT.isScalableVector())
-      break;
-    unsigned VTNumElts = VT.isVector() ? VT.getVectorNumElements() : 1;
-    unsigned SrcVTNumElts = SrcVT.isVector() ? SrcVT.getVectorNumElements() : 1;
-    if (VTNumElts != SrcVTNumElts)
-      break;
-
+    // computeKnownBits handles splicing the known bits of the operand source
+    // elements appropriately so as to line up the bits of the result's demanded
+    // elements, in cases where the bitcast is not elementwise
     KnownBits Bits = computeKnownBits(Op, DemandedElts, Depth + 1);
     Known = KnownFPClass::bitcast(VT.getFltSemantics(), Bits);
     break;

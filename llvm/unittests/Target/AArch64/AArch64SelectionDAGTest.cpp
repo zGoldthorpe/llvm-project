@@ -1641,6 +1641,47 @@ TEST_F(AArch64SelectionDAGTest, KnownFPClass_Bitcast) {
       DAG->computeKnownFPClass(UpperAlwaysNaNAsF64, fcAllFlags);
   EXPECT_FALSE(UpperAlwaysNaNAsF64FPClass.isKnownNeverNaN());
   EXPECT_FALSE(UpperAlwaysNaNAsF64FPClass.isKnownAlwaysNaN());
+
+  SDValue ConstPosNaNI32B = DAG->getConstant(0x7f80'ffff, Loc, MVT::i32);
+  SDValue AlwaysPosNaNI32 =
+      DAG->getSelect(Loc, MVT::i32, Cond, ConstPosNaNI32, ConstPosNaNI32B);
+  SDValue AlwaysPosNaNF32 = DAG->getBitcast(MVT::f32, AlwaysPosNaNI32);
+  KnownFPClass AlwaysPosNaNFPClass =
+      DAG->computeKnownFPClass(AlwaysPosNaNF32, fcAllFlags);
+  EXPECT_TRUE(AlwaysPosNaNFPClass.isKnownAlwaysNaN());
+
+  SDValue AlwaysNaNSplat = DAG->getSplat(MVT::v2f32, Loc, AlwaysPosNaNF32);
+  KnownFPClass AlwaysNaNSplatFPClass =
+      DAG->computeKnownFPClass(AlwaysNaNSplat, fcAllFlags);
+  EXPECT_TRUE(AlwaysNaNSplatFPClass.isKnownAlwaysNaN());
+
+  SDValue AlwaysNaNSplatAsF64 = DAG->getBitcast(MVT::f64, AlwaysNaNSplat);
+  KnownFPClass AlwaysNaNSplatAsF64FPClass =
+      DAG->computeKnownFPClass(AlwaysNaNSplatAsF64, fcAllFlags);
+  EXPECT_TRUE(AlwaysNaNSplatAsF64FPClass.isKnownNeverNaN());
+
+  SDValue ConstPosNaNI64 =
+      DAG->getConstant(0x7ff0'0001'0000'0001, Loc, MVT::i64);
+  SDValue ConstNegNaNI64 =
+      DAG->getConstant(0xfff0'ffff'0fff'ffff, Loc, MVT::i64);
+  SDValue AlwaysNaNI64 =
+      DAG->getSelect(Loc, MVT::i64, Cond, ConstPosNaNI64, ConstNegNaNI64);
+  SDValue AlwaysNaNF64 = DAG->getBitcast(MVT::f64, AlwaysNaNI64);
+  KnownFPClass AlwaysNaNF64FPClass =
+      DAG->computeKnownFPClass(AlwaysNaNF64, fcAllFlags);
+  EXPECT_TRUE(AlwaysNaNF64FPClass.isKnownAlwaysNaN());
+
+  SDValue AlwaysNaNF64AsV2F32 = DAG->getBitcast(MVT::v2f32, AlwaysNaNF64);
+  KnownFPClass AlwaysNaNF64AsV2F32LoFPClass =
+      DAG->computeKnownFPClass(AlwaysNaNF64AsV2F32, DemandLo, fcAllFlags);
+  EXPECT_TRUE(AlwaysNaNF64AsV2F32LoFPClass.isKnownNeverNaN());
+  KnownFPClass AlwaysNaNF64AsV2F32HiFPClass =
+      DAG->computeKnownFPClass(AlwaysNaNF64AsV2F32, DemandHi, fcAllFlags);
+  EXPECT_TRUE(AlwaysNaNF64AsV2F32HiFPClass.isKnownAlwaysNaN());
+  KnownFPClass AlwaysNaNF64AsV2F32FPClass =
+      DAG->computeKnownFPClass(AlwaysNaNF64AsV2F32, fcAllFlags);
+  EXPECT_FALSE(AlwaysNaNF64AsV2F32FPClass.isKnownAlwaysNaN());
+  EXPECT_FALSE(AlwaysNaNF64AsV2F32FPClass.isKnownNeverNaN());
 }
 
 // tests for SelectionDAG::computeKnownFPClass
